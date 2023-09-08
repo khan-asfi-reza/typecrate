@@ -12,6 +12,12 @@ class ValueDoesNotExist(Exception):
     """
 
 
+class InvalidDataType(Exception):
+    """
+    If given source is valid in the source, raise this exception
+    """
+
+
 class InvalidSourceExpression(Exception):
     """
     Only when the grammar of the source expression is not valid
