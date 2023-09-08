@@ -5,8 +5,11 @@ from enum import Enum
 from typing import Any, Optional
 
 from typecrate.datatype import Empty, NonExistent
-from typecrate.exceptions import (InvalidDataType, InvalidSourceExpression,
-                                  ValueDoesNotExist)
+from typecrate.exceptions import (
+    InvalidDataType,
+    InvalidSourceExpression,
+    ValueDoesNotExist,
+)
 from typecrate.methods import classproperty
 from typecrate.structure import EArray
 from typecrate.utils import is_callable, is_iterable
@@ -284,12 +287,12 @@ class ExpressionNode:
     """
 
     def __init__(
-            self,
-            expression: Optional[str],
-            full_expression: str,
-            op_type: OpType,
-            default=NonExistent,
-            parent: "ExpressionNode" = None,
+        self,
+        expression: Optional[str],
+        full_expression: str,
+        op_type: OpType,
+        default=NonExistent,
+        parent: "ExpressionNode" = None,
     ):
         """
         Initializes an ExpressionNode object.
@@ -342,8 +345,8 @@ class ExpressionNode:
         return self._default
 
     def __validate(
-            self,
-            instance,
+        self,
+        instance,
     ):
         """
         Validates a value based on certain conditions.
@@ -524,9 +527,9 @@ class ExpressionNode:
         exp_len = len(expression)
         while index < exp_len:
             if (
-                    expression[index] in Token.seperator_tokens
-                    or expression[index] in Token.unr_operators
-                    or index == exp_len - 1
+                expression[index] in Token.seperator_tokens
+                or expression[index] in Token.unr_operators
+                or index == exp_len - 1
             ):
                 end = index + 1 if index == exp_len - 1 else index
                 op_type = OpType.ARRAY if in_brackets else OpType.OBJ
@@ -608,6 +611,85 @@ class BaseGetter:
 
 
 class E(BaseGetter):
+    """
+    The E class provides a utility for dynamically evaluating expressions on Python objects,
+    like dictionaries or custom classes. Its core functionality is to parse a given string
+    expression and then use this expression to fetch a value from an object passed into it.
+    This class takes inspiration from JavaScript's object getter but provides several advanced
+    features such as default values, array slicing, and expression chaining.
+
+    The class builds an internal representation of the expression, known as _expression_tree,
+    which is a list of tuples containing either a node (represented by the ExpressionNode class)
+    or an operator. This representation is then used to fetch values from an object using
+    the `get` method.
+
+    Attributes:
+        expression (str): The string expression to evaluate.
+        default (Any): A default value to return if the expression cannot be evaluated.
+        _expression_tree (List[Tuple[TokenType, Any]]): Internal representation of parsed expression.
+
+    How it works:
+        1. The expression string is parsed and converted to an internal representation
+           called _expression_tree.
+        2. The `get` method uses this _expression_tree to extract a value from an object passed to it.
+        3. The returned value is based on the expression and a default value if specified.
+
+    Examples:
+
+    Simple Key Fetching:
+        >>> e = E("name.first")
+        >>> e.get({"name": {"first": "John", "last": "Doe"}})
+        'John'
+
+    With Default Value:
+        >>> e = E("name.middle", default="N/A")
+        >>> e.get({"name": {"first": "John", "last": "Doe"}})
+        'N/A'
+
+    Chainable Expressions:
+        >>> e1 = E("name.first")
+        >>> e2 = E("name.last")
+        >>> e1 + e2
+        >>> e1.get({"name": {"first": "John", "last": "Doe"}})
+        'JohnDoe'
+
+    Using Operators (Pipe as an OR operator):
+        >>> e1 = E("name.first")
+        >>> e2 = E("first_name", default="Jane")
+        >>> e1 | e2
+        >>> e1.get({"first_name": "Alice"})
+        'Alice'
+
+    Using Array Slicing:
+        >>> e = E("numbers[1:4]")
+        >>> e.get({"numbers": [0, 1, 2, 3, 4]})
+        [1, 2, 3]
+
+    Advanced JavaScript-like Optional Chaining:
+        >>> e = E("name?.middle")
+        >>> e.get({"name": {"first": "John", "last": "Doe"}})
+        None
+
+        >>> e = E("a.b?.c | a.b[1:2:3].c", default="N/A")
+        >>> e.get({"a": {"b": [{"c": "value"}]}})
+        "N/A"
+
+    Using Array Wildcards:
+        >>> e = E("a[*].b")
+        >>> e.get({"a": [{"b": 1}, {"b": 2}, {"b": 3}]})
+        [1, 2, 3]
+
+    Using unqiue operator
+        >>> e = E("a.b^")
+        >>> data = {"a": {"b": [1, 1, 2, 3, 3]}}
+        >>> print(e.get(data))
+        [1, 2, 3]
+
+    Note:
+        ExpressionNode is used under the hood to make all these features possible.
+        It's responsible for handling individual segments of the expression, including
+        keys, indices, and slice objects.
+    """
     def __init__(self, expression: str = "", default=NonExistent):
         """
         Initialize the E object with an expression and a default value.
@@ -616,7 +698,9 @@ class E(BaseGetter):
             expression (str): The expression to evaluate.
             default (Any): The default value to use if the expression cannot be evaluated.
         """
-        assert expression or default is not NonExistent, "Both expression and default cannot be empty/NonExistent"
+        assert (
+            expression or default is not NonExistent
+        ), "Both expression and default cannot be empty/NonExistent"
         self._expression_tree = []  # List to hold nodes and operators in expression
         self.expression = expression  # The expression string
         self.default = default  # The default value
@@ -653,9 +737,7 @@ class E(BaseGetter):
                     node = ExpressionNode.build(sub_expression, default=self.default)
 
                     # Append the ExpressionNode to _expression_tree
-                    self._expression_tree.append(
-                        (TokenType.NODE, node)
-                    )
+                    self._expression_tree.append((TokenType.NODE, node))
 
                 # If there is at least one token in the expression tree and we hit an operator
                 if len(self._expression_tree) >= 1 and is_operator:
@@ -694,7 +776,11 @@ class E(BaseGetter):
         for _type, token in self._expression_tree:
             if _type == TokenType.NODE:
                 # If the next operation is addition, add the value; otherwise, set the value
-                value = value + token.get(obj) if next_operation == Token.PLUS else token.get(obj)
+                value = (
+                    value + token.get(obj)
+                    if next_operation == Token.PLUS
+                    else token.get(obj)
+                )
             elif _type == TokenType.OPERATOR:
                 # If the operator is PIPE and the value is not empty, break out of the loop
                 if token == Token.PIPE and value is not Empty:
@@ -707,11 +793,17 @@ class E(BaseGetter):
 
     def __add__(self, other: "E"):
         assert isinstance(other, E), "Right hand side must be instance of class `E`"
-        self._expression_tree += [(TokenType.OPERATOR, Token.PLUS), *other._expression_tree]
+        self._expression_tree += [
+            (TokenType.OPERATOR, Token.PLUS),
+            *other._expression_tree,
+        ]
 
     def __or__(self, other: "E"):
         assert isinstance(other, E), "Right hand side must be instance of class `E`"
-        self._expression_tree += [(TokenType.OPERATOR, Token.PIPE), *other._expression_tree]
+        self._expression_tree += [
+            (TokenType.OPERATOR, Token.PIPE),
+            *other._expression_tree,
+        ]
 
     def __iadd__(self, other):
         self.__add__(other)
