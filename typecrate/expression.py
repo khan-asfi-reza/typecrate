@@ -5,7 +5,8 @@ from enum import Enum
 from typing import Any, Optional
 
 from typecrate.datatype import Empty, NonExistent
-from typecrate.exceptions import ValueDoesNotExist, InvalidSourceExpression, InvalidDataType
+from typecrate.exceptions import (InvalidDataType, InvalidSourceExpression,
+                                  ValueDoesNotExist)
 from typecrate.methods import classproperty
 from typecrate.structure import EArray
 from typecrate.utils import is_callable, is_iterable
@@ -63,7 +64,7 @@ class SourceOpType:
         return (
             self.ARRAY_SLICE_SELECT,
             self.ARRAY_MULTI_INDEX_SELECT,
-            self.ARRAY_FULL_SELECT
+            self.ARRAY_FULL_SELECT,
         )
 
 
@@ -95,7 +96,11 @@ class SourceNode:
                 )
             elif ":" in expression:
                 try:
-                    getter = list(map(lambda x: None if x == "" else int(x), expression.split(":")))
+                    getter = list(
+                        map(
+                            lambda x: None if x == "" else int(x), expression.split(":")
+                        )
+                    )
                     self.source_op_type = SourceOpType.ARRAY_SLICE_SELECT
                     if len(getter) == 2:
                         getter.append(None)
@@ -138,18 +143,14 @@ class SourceNode:
 
 
 def clean_expression(expression: str) -> str:
-    return expression.strip().replace(
-        " ", ""
-    ).removesuffix(
-        Token.UP_CARET
-    ).removesuffix(
-        Token.Q_MARK
-    ).removesuffix(
-        Token.UP_CARET
-    ).removesuffix(
-        Token.RSB
-    ).removeprefix(
-        Token.LSB
+    return (
+        expression.strip()
+        .replace(" ", "")
+        .removesuffix(Token.UP_CARET)
+        .removesuffix(Token.Q_MARK)
+        .removesuffix(Token.UP_CARET)
+        .removesuffix(Token.RSB)
+        .removeprefix(Token.LSB)
     )
 
 
@@ -238,12 +239,12 @@ class ExpressionNode:
     """
 
     def __init__(
-            self,
-            expression: Optional[str],
-            full_expression: str,
-            op_type: OpType,
-            default=NonExistent,
-            parent: "ExpressionNode" = None
+        self,
+        expression: Optional[str],
+        full_expression: str,
+        op_type: OpType,
+        default=NonExistent,
+        parent: "ExpressionNode" = None,
     ):
         """
         Initializes an ExpressionNode object.
@@ -262,7 +263,7 @@ class ExpressionNode:
         if expression is not None:
             expression = clean_expression(expression)
             if not expression:
-                raise InvalidSourceExpression("Empty `""` String Source is not valid")
+                raise InvalidSourceExpression("Empty `" "` String Source is not valid")
 
         self.expression = expression
         self.full_expression = full_expression
@@ -275,7 +276,9 @@ class ExpressionNode:
         # Set the default value
         # Check if the node is optional and remove the optional suffix from the expression
         if self.expression:
-            self.optional = True if default is not NonExistent else expression.endswith("?")
+            self.optional = (
+                True if default is not NonExistent else expression.endswith("?")
+            )
             # Split the expression to extract array indices and the source attribute
             self.source = SourceNode(expression, self.op_type)
             # Initialize child to None; will be set later if required
@@ -286,12 +289,16 @@ class ExpressionNode:
     @property
     def default(self):
         if self.optional:
-            return None if (self._default is NonExistent or self._default is Empty) else self._default
+            return (
+                None
+                if (self._default is NonExistent or self._default is Empty)
+                else self._default
+            )
         return self._default
 
     def __validate(
-            self,
-            instance,
+        self,
+        instance,
     ):
         """
         Validates a value based on certain conditions.
@@ -392,7 +399,11 @@ class ExpressionNode:
         else:
             r_val = EArray(self.source.unique_array)
             getter = self.source.getter
-            getter_parent_str = '[]' if not self.parent and self.parent.source else str(self.parent.source.getter)
+            getter_parent_str = (
+                "[]"
+                if not self.parent and self.parent.source
+                else str(self.parent.source.getter)
+            )
             if self.source.source_op_type == SourceOpType.ARRAY_SLICE_SELECT:
                 start = 0 if getter[0] is None else getter[0]
                 end = len(instance) if getter[1] is None else getter[1]
@@ -403,16 +414,14 @@ class ExpressionNode:
                     tb = traceback.format_exc()
                     raise InvalidDataType(
                         "Unable to slice the dataset for `{}` with slice `{}`, original exception was {}".format(
-                            self.full_expression,
-                            getter_parent_str,
-                            tb
-                        ))
+                            self.full_expression, getter_parent_str, tb
+                        )
+                    )
             if self.child:
                 if not is_iterable(instance):
                     raise InvalidDataType(
                         "Invalid iterable `{}` at key `{}`".format(
-                            self.full_expression,
-                            getter_parent_str
+                            self.full_expression, getter_parent_str
                         )
                     )
 
@@ -470,16 +479,22 @@ class ExpressionNode:
         exp_len = len(expression)
         while index < exp_len:
             if (
-                    expression[index] in Token.seperator_tokens or
-                    expression[index] in Token.unr_operators or
-                    index == exp_len - 1
+                expression[index] in Token.seperator_tokens
+                or expression[index] in Token.unr_operators
+                or index == exp_len - 1
             ):
                 end = index + 1 if index == exp_len - 1 else index
                 op_type = OpType.ARRAY if in_brackets else OpType.OBJ
                 sub_expression = clean_expression(expression[start:end])
                 start = index + 1
                 if sub_expression:
-                    node = cls(sub_expression, expression, op_type, default=default, parent=current)
+                    node = cls(
+                        sub_expression,
+                        expression,
+                        op_type,
+                        default=default,
+                        parent=current,
+                    )
                     if not root:
                         root = node
                     if current:

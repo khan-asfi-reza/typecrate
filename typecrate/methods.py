@@ -1,5 +1,4 @@
 class ClassProperty(object):
-
     def __init__(self, f_get, f_set=None):
         self.f_get = f_get
         self.f_set = f_set

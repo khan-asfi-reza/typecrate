@@ -33,14 +33,18 @@ class EArray:
             new_array = self._array + other
             return EArray(unique=self.unique, array=new_array)
         elif type(other) is EArray:
-            return EArray(unique=self.unique or other.unique, array=self.array + other.array)
+            return EArray(
+                unique=self.unique or other.unique, array=self.array + other.array
+            )
 
     def __iadd__(self, other):
         if type(other) is list:
             new_array = self._array + other
             return EArray(unique=self.unique, array=new_array)
         elif type(other) is EArray:
-            return EArray(unique=self.unique or other.unique, array=self.array + other.array)
+            return EArray(
+                unique=self.unique or other.unique, array=self.array + other.array
+            )
 
     def insert(self, elem: Any):
         self._array.append(elem)
