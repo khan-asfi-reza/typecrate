@@ -21,6 +21,11 @@ class OpType(Enum):
     NULL = "NULL"
 
 
+class TokenType:
+    NODE = "NODE"
+    OPERATOR = "OPERATOR"
+
+
 class Token:
     LSB = "["
     RSB = "]"
@@ -29,6 +34,8 @@ class Token:
     R_PAR = ")"
     Q_MARK = "?"
     UP_CARET = "^"
+    PLUS = "+"
+    PIPE = "|"
 
     @classproperty
     def seperator_tokens(self):
@@ -40,6 +47,10 @@ class Token:
         Unary operator, works on the current node
         """
         return self.Q_MARK, self.UP_CARET
+
+    @classproperty
+    def operators(self):
+        return self.PLUS, self.PIPE
 
 
 class SourceOpType:
@@ -71,22 +82,48 @@ class SourceOpType:
 class SourceNode:
     """
     Source is dynamic structure, to get a certain portion from a dataset like dictionary or object
-    Source node is required
+    Source node is required.
+
+    SourceNode Grammar Rule:
+
+    -> "elements[1,2,3]" -> Valid, as it refers to get elements with index 1,2,3
+
+    -> "elements[1]" -> Valid, as it refers to get element with index 1
+
+    -> "elements[*]" -> Valid, as it refers to get every element
+
+    -> "elements[0:1:2] -> Valid, Slice operation
+
+    -> "elements[1,2:3] -> Invalid, Slice and Multi select cannot be together
     """
 
-    def __init__(self, expression, op_type):
+    def __init__(self, expression: str, op_type: OpType):
+        """
+        Args:
+            expression(str): Given sub expression
+            op_type: Data operation type
+        """
+        # The raw expression/sub_expression
         raw_expression = expression
         self.raw_expression = raw_expression
+        # Old implementation
         if expression.endswith(Token.UP_CARET):
             self.unique_array = True
         else:
             self.unique_array = False
+        # Pass the ExpressionNode class operation type
         self.op_type = op_type
+        # Source operation type refers to the
+        # Type of Operation it will perform on the dataset
+        # In Expression Get value
         self.source_op_type = SourceOpType.CHILD_OBJ_SELECT
         getter = expression
         if self.op_type == OpType.ARRAY:
+            # Old implementation
+            # Will be removed upon proper testing
             expression = expression.removesuffix(Token.RSB).removeprefix(Token.LSB)
             getter = expression
+            # Rule: Cannot have both `:` slice operation and `,` multi select operation
             if ":" in expression and "," in expression:
                 raise InvalidSourceExpression(
                     "`[{}]` Invalid expression,"
@@ -94,6 +131,7 @@ class SourceNode:
                     "supported "
                     "".format(expression)
                 )
+            # Slice operator must have list with 3 elements
             elif ":" in expression:
                 try:
                     getter = list(
@@ -102,6 +140,8 @@ class SourceNode:
                         )
                     )
                     self.source_op_type = SourceOpType.ARRAY_SLICE_SELECT
+                    # [1:2], by default set None in the end
+                    # None will be set to 1 while parsing and getting the value
                     if len(getter) == 2:
                         getter.append(None)
                     if len(getter) > 3:
@@ -118,6 +158,7 @@ class SourceNode:
                             expression, tb
                         )
                     )
+            # Multi index select
             elif "," in expression:
                 try:
                     getter = list(map(int, expression.split(",")))
@@ -130,6 +171,7 @@ class SourceNode:
                             expression, tb
                         )
                     )
+            # If just number or *
             elif expression in string.digits + "*":
                 if expression in string.digits and expression != "":
                     self.source_op_type = SourceOpType.ARRAY_INDEX_SELECT
@@ -139,6 +181,9 @@ class SourceNode:
         self.getter = getter
 
     def __repr__(self):
+        return self.raw_expression
+
+    def __str__(self):
         return self.raw_expression
 
 
@@ -239,12 +284,12 @@ class ExpressionNode:
     """
 
     def __init__(
-        self,
-        expression: Optional[str],
-        full_expression: str,
-        op_type: OpType,
-        default=NonExistent,
-        parent: "ExpressionNode" = None,
+            self,
+            expression: Optional[str],
+            full_expression: str,
+            op_type: OpType,
+            default=NonExistent,
+            parent: "ExpressionNode" = None,
     ):
         """
         Initializes an ExpressionNode object.
@@ -297,8 +342,8 @@ class ExpressionNode:
         return self._default
 
     def __validate(
-        self,
-        instance,
+            self,
+            instance,
     ):
         """
         Validates a value based on certain conditions.
@@ -386,7 +431,7 @@ class ExpressionNode:
             Any: The final retrieved value.
         """
         # Retrieve the value for the current node
-
+        # Set root instance reference for future reference
         if not root_instance:
             root_instance = instance
         if not self.source:
@@ -479,9 +524,9 @@ class ExpressionNode:
         exp_len = len(expression)
         while index < exp_len:
             if (
-                expression[index] in Token.seperator_tokens
-                or expression[index] in Token.unr_operators
-                or index == exp_len - 1
+                    expression[index] in Token.seperator_tokens
+                    or expression[index] in Token.unr_operators
+                    or index == exp_len - 1
             ):
                 end = index + 1 if index == exp_len - 1 else index
                 op_type = OpType.ARRAY if in_brackets else OpType.OBJ
@@ -552,56 +597,124 @@ class ExpressionNode:
         return root
 
 
-if __name__ == "__main__":
-    # data = {
-    #     'sections': [
-    #         {
-    #             'layout_content': {
-    #                 'medias': [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
-    #             }
-    #         },
-    #         {
-    #             'layout_content': {
-    #                 'medias': [{"id": 4, "name": "Conan"}, {"id": 5, "name": "David"}]
-    #             }
-    #         }
-    #     ]
-    # }
-    #
-    # datav2 = {
-    #     'sections': [
-    #         {
-    #             'medias': [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
-    #         },
-    #         {
-    #             'medias': [{"id": 4, "name": "Conan"}, {"id": 5, "name": "David"}]
-    #         }
-    #     ]
-    # }
-    #
-    # a = {
-    #     "x": [
-    #         [1, 2, 3],
-    #         [4, 5, 6]
-    #     ]
-    # }
-    # b = "x[0][*]"
-    #
-    #
-    # class E:
-    #     def __init__(self, *args, **kwargs):
-    #         pass
-    #
-    #
-    # b = E("sections.something", default=[], cast=list, flat=True, conditions=[])
-    # d = [
-    #
-    # ]
-    #
-    # __t = {
-    #     ""
-    # }
+class BaseGetter:
+    def get(self, obj: Any):
+        """Placeholder method to get the value from an object based on some expression."""
+        pass
 
-    root = ExpressionNode.build("a.b.c[0:2:1]")
-    test_dict = {"a": {"b": {"c": [1, 2, 3, 4]}}}
-    print(root.get(test_dict))
+    def parse(self):
+        """Placeholder method to parse the expression."""
+        pass
+
+
+class E(BaseGetter):
+    def __init__(self, expression: str = "", default=NonExistent):
+        """
+        Initialize the E object with an expression and a default value.
+
+        Args:
+            expression (str): The expression to evaluate.
+            default (Any): The default value to use if the expression cannot be evaluated.
+        """
+        assert expression or default is not NonExistent, "Both expression and default cannot be empty/NonExistent"
+        self._expression_tree = []  # List to hold nodes and operators in expression
+        self.expression = expression  # The expression string
+        self.default = default  # The default value
+        self.parse()  # Call the parse method to populate self._expression_tree
+
+    def parse(self):
+        """
+        Parse the expression string and populate self._expression_tree with nodes and operators.
+
+        The method creates a list of tuples, each containing a TokenType and the corresponding
+        ExpressionNode or operator.
+        """
+        index = 0  # Initialize index to 0
+        expression = self.expression  # Local variable for expression string
+        length = len(expression)  # Calculate the length of expression string
+        start = 0  # Initialize start index for slicing sub-expressions
+
+        # Loop through each character in expression string
+        while index < length:
+            # Check if current character is an operator
+            is_operator = expression[index] in Token.operators
+
+            # If current character is an operator or at the end of the string
+            if is_operator or index == length - 1:
+                # Calculate the end index for slicing
+                end = index + 1 if index == length - 1 else index
+
+                # Extract the sub-expression
+                sub_expression = expression[start:end]
+
+                # If a sub-expression exists
+                if sub_expression:
+                    # Build an ExpressionNode from the sub-expression
+                    node = ExpressionNode.build(sub_expression, default=self.default)
+
+                    # Append the ExpressionNode to _expression_tree
+                    self._expression_tree.append(
+                        (TokenType.NODE, node)
+                    )
+
+                # If there is at least one token in the expression tree and we hit an operator
+                if len(self._expression_tree) >= 1 and is_operator:
+                    # Append the operator to _expression_tree
+                    self._expression_tree.append(
+                        (TokenType.OPERATOR, expression[index])
+                    )
+
+                # Move the start index to the next character after the operator or end of string
+                start = index + 1
+
+            # Increment the index
+            index += 1
+
+    def get(self, obj: Any):
+        """
+        Get the value from the given object based on the parsed expression.
+
+        Args:
+            obj: The object from which to get the value.
+
+        Returns:
+            The value obtained based on the parsed expression, or the default value.
+
+        Raises:
+            InvalidDataType: If the value is non-existent and no default is provided.
+        """
+        if not self._expression_tree:
+            if self.default is NonExistent:
+                raise InvalidDataType("Value is non-existent")
+            return self.default
+
+        value = Empty  # Initialize value to a special Empty class
+        next_operation = None  # Initialize next operation
+
+        for _type, token in self._expression_tree:
+            if _type == TokenType.NODE:
+                # If the next operation is addition, add the value; otherwise, set the value
+                value = value + token.get(obj) if next_operation == Token.PLUS else token.get(obj)
+            elif _type == TokenType.OPERATOR:
+                # If the operator is PIPE and the value is not empty, break out of the loop
+                if token == Token.PIPE and value is not Empty:
+                    break
+                # If the operator is PLUS, set the next operation to addition
+                elif token == Token.PLUS:
+                    next_operation = Token.PLUS
+
+        return value
+
+    def __add__(self, other: "E"):
+        assert isinstance(other, E), "Right hand side must be instance of class `E`"
+        self._expression_tree += [(TokenType.OPERATOR, Token.PLUS), *other._expression_tree]
+
+    def __or__(self, other: "E"):
+        assert isinstance(other, E), "Right hand side must be instance of class `E`"
+        self._expression_tree += [(TokenType.OPERATOR, Token.PIPE), *other._expression_tree]
+
+    def __iadd__(self, other):
+        self.__add__(other)
+
+    def __ior__(self, other):
+        self.__or__(other)
