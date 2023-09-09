@@ -9,6 +9,7 @@ def is_iterable(obj):
     return isinstance(obj, Iterable)
 
 
+# From: django-rest-framework/fields
 def is_callable(obj):
     """
     True if the object is a callable.
@@ -21,10 +22,17 @@ def is_callable(obj):
         raise BuiltinFunctionsError("Built-in functions are not usable. ")
 
     if not (
-        inspect.isfunction(obj)
-        or inspect.ismethod(obj)
-        or isinstance(obj, functools.partial)
+            inspect.isfunction(obj)
+            or inspect.ismethod(obj)
+            or isinstance(obj, functools.partial)
     ):
         return False
 
-    return True
+    sig = inspect.signature(obj)
+    params = sig.parameters.values()
+    return all(
+        param.kind == param.VAR_POSITIONAL or
+        param.kind == param.VAR_KEYWORD or
+        param.default != param.empty
+        for param in params
+    )
