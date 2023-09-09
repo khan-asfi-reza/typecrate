@@ -1,8 +1,7 @@
-# Test the build method with a simple expression
 import pytest
 
 from typecrate.exceptions import ValueDoesNotExist
-from typecrate.expression import ExpressionNode
+from typecrate.expression import ExpressionNode, E
 
 
 def test_build_simple_expression():
@@ -168,7 +167,55 @@ def test_get_data_from_array_slice_with_start_end():
     test_dict = {"a": {"b": {"c": [1, 2, 3, 4]}}}
     assert root.get(test_dict) == [1, 2, 3]
 
+
 def test_get_data_from_array_index_optional():
     root = ExpressionNode.build("a.b.c[0]?")
     test_dict = {"a": {"b": {"c": []}}}
     assert root.get(test_dict) is None
+
+
+def test_simple_key_fetching():
+    e = E("name.first")
+    assert e.get({"name": {"first": "John", "last": "Doe"}}) == "John"
+
+
+def test_with_default_value():
+    e = E("name.middle", default="N/A")
+    assert e.get({"name": {"first": "John", "last": "Doe"}}) == "N/A"
+
+
+def test_chainable_expressions():
+    e1 = E("name.first")
+    e2 = E("name.last")
+    e1 + e2
+    assert e1.get({"name": {"first": "John", "last": "Doe"}}) == "JohnDoe"
+
+
+def test_using_operators():
+    e1 = E("name.first")
+    e2 = E("first_name", default="Jane")
+    e1 | e2
+    assert e1.get({"first_name": "Alice"}) == "Alice"
+
+
+def test_using_array_slicing():
+    e = E("numbers[1:4]")
+    assert e.get({"numbers": [0, 1, 2, 3, 4]}) == [1, 2, 3]
+
+
+def test_advanced_optional_chaining():
+    e = E("name.middle?")
+    assert e.get({"name": {"first": "John", "last": "Doe"}}) is None
+
+    e = E("a.b?.c | a.b[1:2:3].c", default="N/A")
+    assert e.get({"a": {"b": [{"c": "value"}]}}) == "N/A"
+
+
+def test_using_array_wildcards():
+    e = E("a[*].b")
+    assert e.get({"a": [{"b": 1}, {"b": 2}, {"b": 3}]}) == [1, 2, 3]
+
+
+def test_unique_operator():
+    e = E("a.b[*]^")
+    assert e.get({"a": {"b": [1, 1, 2, 3, 3]}}) == [1, 2, 3]

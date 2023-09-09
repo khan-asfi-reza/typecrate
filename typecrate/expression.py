@@ -42,18 +42,18 @@ class Token:
 
     @classproperty
     def seperator_tokens(self):
-        return self.LSB, self.RSB, self.DOT
+        return {self.LSB, self.RSB, self.DOT}
 
     @classproperty
     def unr_operators(self):
         """
         Unary operator, works on the current node
         """
-        return self.Q_MARK, self.UP_CARET
+        return {self.Q_MARK, self.UP_CARET}
 
     @classproperty
     def operators(self):
-        return self.PLUS, self.PIPE
+        return {self.PLUS, self.PIPE}
 
 
 class SourceOpType:
@@ -287,12 +287,12 @@ class ExpressionNode:
     """
 
     def __init__(
-        self,
-        expression: Optional[str],
-        full_expression: str,
-        op_type: OpType,
-        default=NonExistent,
-        parent: "ExpressionNode" = None,
+            self,
+            expression: Optional[str],
+            full_expression: str,
+            op_type: OpType,
+            default=NonExistent,
+            parent: "ExpressionNode" = None,
     ):
         """
         Initializes an ExpressionNode object.
@@ -345,8 +345,8 @@ class ExpressionNode:
         return self._default
 
     def __validate(
-        self,
-        instance,
+            self,
+            instance,
     ):
         """
         Validates a value based on certain conditions.
@@ -370,18 +370,19 @@ class ExpressionNode:
         self.validate(instance)
         return instance
 
-    def get_node_value(self, instance: Any):
+    def get_node_value(self, instance: Any, default=NonExistent):
         """
         Retrieves the node's value based on its attributes and the given instance.
 
         Args:
             instance (Any): The instance to get the value from.
+            default: Default value to pass
 
         Returns:
             Any: The retrieved value.
         """
         # Retrieve value based on whether the instance is a Mapping or a custom object
-        value = self.default
+        value = self.default if default is NonExistent else default
         if self.source.source_op_type == SourceOpType.ARRAY_INDEX_SELECT:
             if is_iterable(instance):
                 try:
@@ -422,11 +423,37 @@ class ExpressionNode:
 
         """
 
-    def get(self, instance: Any = None, root_instance: Any = None):
+    def evaluate_expression(self, instance: Any, root_instance: Any, default: Any):
+        # This utility function evaluates the expression for the current node
+        # and returns the value to be used in further evaluation
+        if not self.source:
+            return self.default if default is NonExistent else default
+        instance = self.get_node_value(instance, default)
+        if self.child and instance is not None:
+            return self.child.get(instance, root_instance, default)
+        return instance
+
+    def evaluate_array(self, instance: Any, root_instance: Any, default: Any):
+        # This utility function evaluates the array operation
+        # for the current node and returns the evaluated array
+        r_val = EArray(self.source.unique_array)
+        if self.child:
+            for each_instance in instance:
+                child_val = self.child.get(each_instance, root_instance, default)
+                if type(child_val) is not list:
+                    r_val.insert(child_val)
+                else:
+                    r_val += child_val
+        else:
+            r_val += list(instance)
+        return r_val.array
+
+    def get(self, instance: Any = None, root_instance: Any = None, default=NonExistent):
         """
         Retrieves the node's value recursively, traversing any child nodes.
 
         Args:
+            default: Fallback value
             root_instance: The root object/data that is given to get the value using the built expression
             instance (Any): The instance is the modified value from the root instance, it is later returned.
 
@@ -437,50 +464,33 @@ class ExpressionNode:
         # Set root instance reference for future reference
         if not root_instance:
             root_instance = instance
-        if not self.source:
-            return self.default
-        if self.source.source_op_type not in SourceOpType.array_op_type:
-            instance = self.get_node_value(instance)
-            if self.child and instance is not None:
-                return self.child.get(instance, root_instance)
-            return instance
-        else:
-            r_val = EArray(self.source.unique_array)
-            getter = self.source.getter
-            getter_parent_str = (
-                "[]"
-                if not self.parent and self.parent.source
-                else str(self.parent.source.getter)
-            )
-            if self.source.source_op_type == SourceOpType.ARRAY_SLICE_SELECT:
-                start = 0 if getter[0] is None else getter[0]
-                end = len(instance) if getter[1] is None else getter[1]
-                step = 1 if getter[2] is None else getter[2]
-                try:
-                    instance = instance[start:end:step]
-                except Exception:
-                    tb = traceback.format_exc()
-                    raise InvalidDataType(
-                        "Unable to slice the dataset for `{}` with slice `{}`, original exception was {}".format(
-                            self.full_expression, getter_parent_str, tb
-                        )
-                    )
-            if self.child:
-                if not is_iterable(instance):
-                    raise InvalidDataType(
-                        "Invalid iterable `{}` at key `{}`".format(
-                            self.full_expression, getter_parent_str
-                        )
-                    )
 
-                for each_instance in instance:
-                    child_val = self.child.get(each_instance, root_instance)
-                    if type(child_val) is not list:
-                        r_val.insert(child_val)
-                    else:
-                        r_val += child_val
-            else:
-                return instance
+        if self.source.source_op_type not in SourceOpType.array_op_type:
+            return self.evaluate_expression(instance, root_instance, default)
+
+        if self.source.source_op_type == SourceOpType.ARRAY_SLICE_SELECT:
+            start, end, step = self.source.getter
+            start = start or 0
+            end = end or len(instance)
+            step = step or 1
+            try:
+                instance = instance[start:end:step]
+            except Exception:
+                raise InvalidDataType(
+                    "Unable to slice the dataset for `{}` with slice `{}`".format(
+                        self.full_expression,
+                        str(self.parent.source.getter) if self.parent and self.parent.source else "[]"
+                    )
+                )
+
+        if not is_iterable(instance):
+            raise InvalidDataType(
+                "Invalid iterable `{}` at key `{}`".format(
+                    self.full_expression, str(self.parent.source.getter) if self.parent and self.parent.source else "[]"
+                )
+            )
+
+        return self.evaluate_array(instance, root_instance, default)
 
     @classmethod
     def build(cls, expression: str, default=NonExistent) -> Optional["ExpressionNode"]:
@@ -518,19 +528,18 @@ class ExpressionNode:
             to later evaluate these expressions against various types of data structures.
         """
         # Initialize variables to keep track of the root and current node
-        root = None
-        current = None
-        start = 0
-        index = 0
+        root, current = None, None
+        start, index, br_margin = 0, 0, 0
         in_brackets = False
-        br_margin = 0
         exp_len = len(expression)
         while index < exp_len:
+            char = expression[index]
             if (
-                expression[index] in Token.seperator_tokens
-                or expression[index] in Token.unr_operators
-                or index == exp_len - 1
+                    char in Token.seperator_tokens
+                    or char in Token.unr_operators
+                    or index == exp_len - 1
             ):
+                # Determining end index, as for the last index, the last character stays missing
                 end = index + 1 if index == exp_len - 1 else index
                 op_type = OpType.ARRAY if in_brackets else OpType.OBJ
                 sub_expression = clean_expression(expression[start:end])
@@ -548,30 +557,31 @@ class ExpressionNode:
                     if current:
                         current.child = node
                     current = node
-                if expression[index] == Token.LSB:
+                if char == Token.LSB:
                     if in_brackets:
                         raise InvalidSourceExpression(
-                            "`{}` Syntax error in source expression, Array index must be in the following pattern "
-                            "`item[n]`".format(expression)
-                        )
+                            "{} Syntax error: Nested array index not allowed.".format(expression))
+                    # Mark that we are inside array brackets
                     in_brackets = True
+                    # Increment the bracket margin counter
                     br_margin += 1
 
-                elif expression[index] == Token.RSB:
+                elif char == Token.RSB:
                     if not in_brackets:
                         raise InvalidSourceExpression(
                             "`{}` Syntax error in source expression, Array index must be in the following pattern "
                             "`item[n]`".format(expression)
                         )
                     in_brackets = False
+                    # Decrement the bracket margin counter
                     br_margin -= 1
 
-                elif expression[index] == Token.Q_MARK:
+                elif char == Token.Q_MARK:
                     # For optional chaining for array operation
                     if current:
                         current.optional = True
 
-                elif expression[index] == Token.UP_CARET:
+                elif char == Token.UP_CARET:
                     # For unique array
                     if current and current.source:
                         if current.op_type != OpType.ARRAY:
@@ -592,10 +602,9 @@ class ExpressionNode:
 
             index += 1
 
+        # If the bracket margin is still greater than zero, it means we have unmatched brackets
         if br_margin > 0:
-            raise InvalidSourceExpression(
-                "`{}` Syntax error in source expression, contains uneven array index operator `[` , `]`"
-            )
+            raise InvalidSourceExpression("{} Syntax error: Unmatched '['.".format(expression))
 
         return root
 
@@ -612,7 +621,8 @@ class BaseGetter:
 
 class E(BaseGetter):
     """
-    The E class provides a utility for dynamically evaluating expressions on Python objects,
+    The E or Expression class, in short E class provides a utility for dynamically evaluating expressions
+    on Python objects,
     like dictionaries or custom classes. Its core functionality is to parse a given string
     expression and then use this expression to fetch a value from an object passed into it.
     This class takes inspiration from JavaScript's object getter but provides several advanced
@@ -666,7 +676,7 @@ class E(BaseGetter):
         [1, 2, 3]
 
     Advanced JavaScript-like Optional Chaining:
-        >>> e = E("name?.middle")
+        >>> e = E("name.middle?")
         >>> e.get({"name": {"first": "John", "last": "Doe"}})
         None
 
@@ -680,7 +690,7 @@ class E(BaseGetter):
         [1, 2, 3]
 
     Using unqiue operator
-        >>> e = E("a.b^")
+        >>> e = E("a.b[*]^")
         >>> data = {"a": {"b": [1, 1, 2, 3, 3]}}
         >>> print(e.get(data))
         [1, 2, 3]
@@ -690,6 +700,7 @@ class E(BaseGetter):
         It's responsible for handling individual segments of the expression, including
         keys, indices, and slice objects.
     """
+
     def __init__(self, expression: str = "", default=NonExistent):
         """
         Initialize the E object with an expression and a default value.
@@ -699,7 +710,7 @@ class E(BaseGetter):
             default (Any): The default value to use if the expression cannot be evaluated.
         """
         assert (
-            expression or default is not NonExistent
+                expression or default is not NonExistent
         ), "Both expression and default cannot be empty/NonExistent"
         self._expression_tree = []  # List to hold nodes and operators in expression
         self.expression = expression  # The expression string
@@ -739,7 +750,7 @@ class E(BaseGetter):
                     # Append the ExpressionNode to _expression_tree
                     self._expression_tree.append((TokenType.NODE, node))
 
-                # If there is at least one token in the expression tree and we hit an operator
+                # If there is at least one token in the expression tree and hit an operator
                 if len(self._expression_tree) >= 1 and is_operator:
                     # Append the operator to _expression_tree
                     self._expression_tree.append(
@@ -752,11 +763,12 @@ class E(BaseGetter):
             # Increment the index
             index += 1
 
-    def get(self, obj: Any):
+    def get(self, obj: Any, default=NonExistent):
         """
         Get the value from the given object based on the parsed expression.
 
         Args:
+            default: Default value for fallback
             obj: The object from which to get the value.
 
         Returns:
@@ -771,35 +783,42 @@ class E(BaseGetter):
             return self.default
 
         value = Empty  # Initialize value to a special Empty class
-        next_operation = None  # Initialize next operation
-
+        next_operation, prev_error = None, None
         for _type, token in self._expression_tree:
             if _type == TokenType.NODE:
                 # If the next operation is addition, add the value; otherwise, set the value
-                value = (
-                    value + token.get(obj)
-                    if next_operation == Token.PLUS
-                    else token.get(obj)
-                )
+                try:
+                    value = (
+                        value + token.get(obj, default)
+                        if next_operation == Token.PLUS
+                        else token.get(obj, default)
+                    )
+                except ValueDoesNotExist as Err:
+                    prev_error = Err
             elif _type == TokenType.OPERATOR:
                 # If the operator is PIPE and the value is not empty, break out of the loop
-                if token == Token.PIPE and value is not Empty:
-                    break
+                if token == Token.PIPE:
+                    if value is not Empty:
+                        break
+                    prev_error = None
                 # If the operator is PLUS, set the next operation to addition
                 elif token == Token.PLUS:
                     next_operation = Token.PLUS
-
+                    if prev_error:
+                        raise prev_error
+        if prev_error:
+            raise prev_error
         return value
 
     def __add__(self, other: "E"):
-        assert isinstance(other, E), "Right hand side must be instance of class `E`"
+        assert isinstance(other, E), "Both must be instance of class `E`"
         self._expression_tree += [
             (TokenType.OPERATOR, Token.PLUS),
             *other._expression_tree,
         ]
 
     def __or__(self, other: "E"):
-        assert isinstance(other, E), "Right hand side must be instance of class `E`"
+        assert isinstance(other, E), "Both must be instance of class `E`"
         self._expression_tree += [
             (TokenType.OPERATOR, Token.PIPE),
             *other._expression_tree,
@@ -810,3 +829,9 @@ class E(BaseGetter):
 
     def __ior__(self, other):
         self.__or__(other)
+
+
+class BasicE(BaseGetter):
+    """
+    BasicE class also known as BasicExpression getter.
+    """
